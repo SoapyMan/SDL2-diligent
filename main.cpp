@@ -7,26 +7,24 @@
 #if D3D11_SUPPORTED
 #include <EngineFactoryD3D11.h>
 #endif
+
 #if D3D12_SUPPORTED
 #include <EngineFactoryD3D12.h>
 #endif
+
 #if GL_SUPPORTED || GLES_SUPPORTED
 #include <EngineFactoryOpenGL.h>
 #endif
+
 #if VULKAN_SUPPORTED
 #include <EngineFactoryVk.h>
 #endif
+
 #if METAL_SUPPORTED
 #include <EngineFactoryMtl.h>
 #endif
-#include <Common/interface/RefCntAutoPtr.hpp>
 
-#if PLATFORM_MACOS
-#define GLFW_EXPOSE_NATIVE_COCOA
-#endif
-#if PLATFORM_WIN32
-#define GLFW_EXPOSE_NATIVE_WIN32
-#endif
+#include <Common/interface/RefCntAutoPtr.hpp>
 
 #ifndef PLATFORM_ANDROID
 #define SDL_MAIN_HANDLED // we have own main
@@ -60,16 +58,11 @@ std::vector<DisplayModeAttribs> m_DisplayModes;
 int m_InitialWindowWidth = 0;
 int m_InitialWindowHeight = 0;
 int m_ValidationLevel = -1;
-std::string m_AppTitle;
+
+std::string m_AppTitle = "SDL2 DiligentEngine starter example";
+
 Uint32 m_AdapterId = 0;
 ADAPTER_TYPE m_AdapterType = ADAPTER_TYPE_UNKNOWN;
-std::string m_AdapterDetailsString;
-int m_SelectedDisplayMode = 0;
-bool m_bVSync = false;
-bool m_bFullScreenMode = false;
-bool m_bShowAdaptersDialog = true;
-bool m_bShowUI = true;
-double m_CurrentTime = 0;
 
 static const char* VSSource = R"(
 struct PSInput 
@@ -111,7 +104,8 @@ void main(in  PSInput  PSIn,
 }
 )";
 
-void InitializeEngine(const NativeWindow* pWindow) {
+void InitializeEngine(const NativeWindow* pWindow)
+{
 	SwapChainDesc SCDesc;
 
 #if PLATFORM_MACOS
@@ -122,222 +116,264 @@ void InitializeEngine(const NativeWindow* pWindow) {
 #endif
 
 	std::vector<IDeviceContext*> ppContexts;
-	switch (m_DeviceType) {
+	switch (m_DeviceType)
+	{
 #if D3D11_SUPPORTED
-	case RENDER_DEVICE_TYPE_D3D11: {
-		EngineD3D11CreateInfo EngineCI;
+		case RENDER_DEVICE_TYPE_D3D11:
+		{
+			EngineD3D11CreateInfo EngineCI;
 
-		if (m_ValidationLevel >= 1) {
-			EngineCI.DebugFlags =
-				D3D11_DEBUG_FLAG_CREATE_DEBUG_DEVICE |
-				D3D11_DEBUG_FLAG_VERIFY_COMMITTED_SHADER_RESOURCES |
-				D3D11_DEBUG_FLAG_VERIFY_COMMITTED_RESOURCE_RELEVANCE;
-		}
-		else if (m_ValidationLevel == 0) {
-			EngineCI.DebugFlags = D3D11_DEBUG_FLAG_NONE;
-		}
+			if (m_ValidationLevel >= 1)
+			{
+				EngineCI.DebugFlags =
+					D3D11_DEBUG_FLAG_CREATE_DEBUG_DEVICE |
+					D3D11_DEBUG_FLAG_VERIFY_COMMITTED_SHADER_RESOURCES |
+					D3D11_DEBUG_FLAG_VERIFY_COMMITTED_RESOURCE_RELEVANCE;
+			}
+			else if (m_ValidationLevel == 0)
+			{
+				EngineCI.DebugFlags = D3D11_DEBUG_FLAG_NONE;
+			}
 
 #if ENGINE_DLL
-		// Load the dll and import GetEngineFactoryD3D11() function
-		auto GetEngineFactoryD3D11 = LoadGraphicsEngineD3D11();
+			// Load the dll and import GetEngineFactoryD3D11() function
+			auto GetEngineFactoryD3D11 = LoadGraphicsEngineD3D11();
 #endif
-		auto* pFactoryD3D11 = GetEngineFactoryD3D11();
-		m_pEngineFactory = pFactoryD3D11;
-		Uint32 NumAdapters = 0;
-		pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
-			NumAdapters, 0);
-		std::vector<AdapterAttribs> Adapters(NumAdapters);
-		if (NumAdapters > 0) {
-			pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
-				NumAdapters, Adapters.data());
-		}
-		else {
-		}
+			auto* pFactoryD3D11 = GetEngineFactoryD3D11();
+			m_pEngineFactory = pFactoryD3D11;
+			
+			Uint32 NumAdapters = 0;
+			pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,NumAdapters, 0);
+			
+			std::vector<AdapterAttribs> Adapters(NumAdapters);
+			if (NumAdapters > 0) 
+			{
+				pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
+					NumAdapters, Adapters.data());
+			}
 
-		if (m_AdapterType == ADAPTER_TYPE_SOFTWARE) {
-			for (Uint32 i = 0; i < Adapters.size(); ++i) {
-				if (Adapters[i].AdapterType == m_AdapterType) {
-					m_AdapterId = i;
-					break;
+			if (m_AdapterType == ADAPTER_TYPE_SOFTWARE) 
+			{
+				for (Uint32 i = 0; i < Adapters.size(); ++i) 
+				{
+					if (Adapters[i].AdapterType == m_AdapterType) 
+					{
+						m_AdapterId = i;
+						break;
+					}
 				}
 			}
+
+			m_AdapterAttribs = Adapters[m_AdapterId];
+			if (m_AdapterType != ADAPTER_TYPE_SOFTWARE)
+			{
+				Uint32 NumDisplayModes = 0;
+				
+				pFactoryD3D11->EnumerateDisplayModes(
+					EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
+					TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes, nullptr);
+				
+				m_DisplayModes.resize(NumDisplayModes);
+				
+				pFactoryD3D11->EnumerateDisplayModes(
+					EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
+					TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes,
+					m_DisplayModes.data());
+			}
+
+			EngineCI.AdapterId = m_AdapterId;
+			ppContexts.resize(1 + EngineCI.NumDeferredContexts);
+			pFactoryD3D11->CreateDeviceAndContextsD3D11(EngineCI, &m_pDevice,ppContexts.data());
+
+			if (pWindow != nullptr)
+			{
+				pFactoryD3D11->CreateSwapChainD3D11(m_pDevice, ppContexts[0], SCDesc,
+                   FullScreenModeDesc{}, *pWindow, &m_pSwapChain);
+			}
 		}
-
-		m_AdapterAttribs = Adapters[m_AdapterId];
-		if (m_AdapterType != ADAPTER_TYPE_SOFTWARE) {
-			Uint32 NumDisplayModes = 0;
-			pFactoryD3D11->EnumerateDisplayModes(
-				EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
-				TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes, nullptr);
-			m_DisplayModes.resize(NumDisplayModes);
-			pFactoryD3D11->EnumerateDisplayModes(
-				EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
-				TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes,
-				m_DisplayModes.data());
-		}
-
-		EngineCI.AdapterId = m_AdapterId;
-		ppContexts.resize(1 + EngineCI.NumDeferredContexts);
-		pFactoryD3D11->CreateDeviceAndContextsD3D11(EngineCI, &m_pDevice,
-			ppContexts.data());
-
-		if (pWindow != nullptr)
-			pFactoryD3D11->CreateSwapChainD3D11(m_pDevice, ppContexts[0], SCDesc,
-				FullScreenModeDesc{}, *pWindow,
-				&m_pSwapChain);
-	} break;
+		break;
 #endif
 
 #if D3D12_SUPPORTED
-	case RENDER_DEVICE_TYPE_D3D12: {
-		EngineD3D12CreateInfo EngineCI;
+		case RENDER_DEVICE_TYPE_D3D12:
+		{
+			EngineD3D12CreateInfo EngineCI;
 
-		if (m_ValidationLevel >= 1) {
-			EngineCI.EnableDebugLayer = true;
-			if (m_ValidationLevel >= 2) EngineCI.EnableGPUBasedValidation = true;
-		}
-		else if (m_ValidationLevel == 0) {
-			EngineCI.EnableDebugLayer = false;
-		}
+			if (m_ValidationLevel >= 1) 
+			{
+				EngineCI.EnableDebugLayer = true;
+				
+				if (m_ValidationLevel >= 2)
+					EngineCI.EnableGPUBasedValidation = true;
+			}
+			else if (m_ValidationLevel == 0)
+			{
+				EngineCI.EnableDebugLayer = false;
+			}
 
 #if ENGINE_DLL
-		// Load the dll and import GetEngineFactoryD3D12() function
-		auto GetEngineFactoryD3D12 = LoadGraphicsEngineD3D12();
+			// Load the dll and import GetEngineFactoryD3D12() function
+			auto GetEngineFactoryD3D12 = LoadGraphicsEngineD3D12();
 #endif
-		auto* pFactoryD3D12 = GetEngineFactoryD3D12();
-		if (!pFactoryD3D12->LoadD3D12()) {
-		}
+			auto* pFactoryD3D12 = GetEngineFactoryD3D12();
+			if (!pFactoryD3D12->LoadD3D12()) 
+			{
+			}
 
-		m_pEngineFactory = pFactoryD3D12;
-		Uint32 NumAdapters = 0;
-		pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
-			NumAdapters, 0);
-		std::vector<AdapterAttribs> Adapters(NumAdapters);
-		if (NumAdapters > 0) {
-			pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
-				NumAdapters, Adapters.data());
-		}
-		else {
+			m_pEngineFactory = pFactoryD3D12;
+			Uint32 NumAdapters = 0;
+			pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel,NumAdapters, 0);
+			
+			std::vector<AdapterAttribs> Adapters(NumAdapters);
+			if (NumAdapters > 0) 
+			{
+				pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel, NumAdapters, Adapters.data());
+			}
+			else
+			{
 #if D3D11_SUPPORTED
-			m_DeviceType = RENDER_DEVICE_TYPE_D3D11;
-			InitializeEngine(pWindow);
-			return;
+				m_DeviceType = RENDER_DEVICE_TYPE_D3D11;
+				InitializeEngine(pWindow);
+				return;
 #endif
-		}
+			}
 
-		if (m_AdapterType == ADAPTER_TYPE_SOFTWARE) {
-			for (Uint32 i = 0; i < Adapters.size(); ++i) {
-				if (Adapters[i].AdapterType == m_AdapterType) {
-					m_AdapterId = i;
-					break;
+			if (m_AdapterType == ADAPTER_TYPE_SOFTWARE) 
+			{
+				for (Uint32 i = 0; i < Adapters.size(); ++i)
+				{
+					if (Adapters[i].AdapterType == m_AdapterType) 
+					{
+						m_AdapterId = i;
+						break;
+					}
 				}
 			}
+
+			m_AdapterAttribs = Adapters[m_AdapterId];
+			if (m_AdapterType != ADAPTER_TYPE_SOFTWARE)
+			{
+				Uint32 NumDisplayModes = 0;
+				pFactoryD3D12->EnumerateDisplayModes(
+					EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
+					TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes, nullptr);
+				
+				m_DisplayModes.resize(NumDisplayModes);
+				
+				pFactoryD3D12->EnumerateDisplayModes(
+					EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
+					TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes,
+					m_DisplayModes.data());
+			}
+
+			EngineCI.AdapterId = m_AdapterId;
+			ppContexts.resize(1 + EngineCI.NumDeferredContexts);
+			pFactoryD3D12->CreateDeviceAndContextsD3D12(EngineCI, &m_pDevice,
+				ppContexts.data());
+
+			if (!m_pSwapChain && pWindow != nullptr)
+			{
+				pFactoryD3D12->CreateSwapChainD3D12(m_pDevice, ppContexts[0], SCDesc,
+                   FullScreenModeDesc{}, *pWindow,
+                   &m_pSwapChain);
+			}
 		}
-
-		m_AdapterAttribs = Adapters[m_AdapterId];
-		if (m_AdapterType != ADAPTER_TYPE_SOFTWARE) {
-			Uint32 NumDisplayModes = 0;
-			pFactoryD3D12->EnumerateDisplayModes(
-				EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
-				TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes, nullptr);
-			m_DisplayModes.resize(NumDisplayModes);
-			pFactoryD3D12->EnumerateDisplayModes(
-				EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
-				TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes,
-				m_DisplayModes.data());
-		}
-
-		EngineCI.AdapterId = m_AdapterId;
-		ppContexts.resize(1 + EngineCI.NumDeferredContexts);
-		pFactoryD3D12->CreateDeviceAndContextsD3D12(EngineCI, &m_pDevice,
-			ppContexts.data());
-
-		if (!m_pSwapChain && pWindow != nullptr)
-			pFactoryD3D12->CreateSwapChainD3D12(m_pDevice, ppContexts[0], SCDesc,
-				FullScreenModeDesc{}, *pWindow,
-				&m_pSwapChain);
-	} break;
+		break;
 #endif
 
 #if GL_SUPPORTED || GLES_SUPPORTED
-	case RENDER_DEVICE_TYPE_GL:
-	case RENDER_DEVICE_TYPE_GLES: {
+		case RENDER_DEVICE_TYPE_GL:
+		case RENDER_DEVICE_TYPE_GLES:
+		{
 #if !PLATFORM_MACOS
-		VERIFY_EXPR(pWindow != nullptr);
+			VERIFY_EXPR(pWindow != nullptr);
 #endif
+			
 #if EXPLICITLY_LOAD_ENGINE_GL_DLL
-		// Load the dll and import GetEngineFactoryOpenGL() function
-		auto GetEngineFactoryOpenGL = LoadGraphicsEngineOpenGL();
+			// Load the dll and import GetEngineFactoryOpenGL() function
+			auto GetEngineFactoryOpenGL = LoadGraphicsEngineOpenGL();
 #endif
-		auto* pFactoryOpenGL = GetEngineFactoryOpenGL();
-		m_pEngineFactory = pFactoryOpenGL;
-		EngineGLCreateInfo CreationAttribs;
-		CreationAttribs.Window = *pWindow;
-		if (CreationAttribs.NumDeferredContexts != 0) {
-			CreationAttribs.NumDeferredContexts = 0;
+			auto* pFactoryOpenGL = GetEngineFactoryOpenGL();
+			m_pEngineFactory = pFactoryOpenGL;
+			EngineGLCreateInfo CreationAttribs;
+			CreationAttribs.Window = *pWindow;
+			
+			if (CreationAttribs.NumDeferredContexts != 0)
+			{
+				CreationAttribs.NumDeferredContexts = 0;
+			}
+			
+			ppContexts.resize(1 + CreationAttribs.NumDeferredContexts);
+			pFactoryOpenGL->CreateDeviceAndSwapChainGL(CreationAttribs, &m_pDevice,
+				ppContexts.data(), SCDesc,
+				&m_pSwapChain);
 		}
-		ppContexts.resize(1 + CreationAttribs.NumDeferredContexts);
-		pFactoryOpenGL->CreateDeviceAndSwapChainGL(CreationAttribs, &m_pDevice,
-			ppContexts.data(), SCDesc,
-			&m_pSwapChain);
-	} break;
+		break;
 #endif
 
 #if VULKAN_SUPPORTED
-	case RENDER_DEVICE_TYPE_VULKAN: {
+		case RENDER_DEVICE_TYPE_VULKAN:
+		{
 #if EXPLICITLY_LOAD_ENGINE_VK_DLL
-		// Load the dll and import GetEngineFactoryVk() function
-		auto GetEngineFactoryVk = LoadGraphicsEngineVk();
+			// Load the dll and import GetEngineFactoryVk() function
+			auto GetEngineFactoryVk = LoadGraphicsEngineVk();
 #endif
-		EngineVkCreateInfo EngVkAttribs;
+			EngineVkCreateInfo EngVkAttribs;
 
-		if (m_ValidationLevel >= 1) {
-			EngVkAttribs.EnableValidation = true;
-		}
-		else if (m_ValidationLevel == 0) {
-			EngVkAttribs.EnableValidation = false;
-		}
+			if (m_ValidationLevel >= 1) 
+			{
+				EngVkAttribs.EnableValidation = true;
+			}
+			else if (m_ValidationLevel == 0)
+			{
+				EngVkAttribs.EnableValidation = false;
+			}
 
-		ppContexts.resize(1 + EngVkAttribs.NumDeferredContexts);
-		auto* pFactoryVk = GetEngineFactoryVk();
-		m_pEngineFactory = pFactoryVk;
-		pFactoryVk->CreateDeviceAndContextsVk(EngVkAttribs, &m_pDevice,
-			ppContexts.data());
-		if (!m_pDevice) {
+			ppContexts.resize(1 + EngVkAttribs.NumDeferredContexts);
+			auto* pFactoryVk = GetEngineFactoryVk();
+			m_pEngineFactory = pFactoryVk;
+			pFactoryVk->CreateDeviceAndContextsVk(EngVkAttribs, &m_pDevice,ppContexts.data());
+			if (!m_pDevice) 
+			{
+			}
+		
+			if (!m_pSwapChain && pWindow != nullptr)
+				pFactoryVk->CreateSwapChainVk(m_pDevice, ppContexts[0], SCDesc,
+					*pWindow, &m_pSwapChain);
 		}
-		if (!m_pSwapChain && pWindow != nullptr)
-			pFactoryVk->CreateSwapChainVk(m_pDevice, ppContexts[0], SCDesc,
-				*pWindow, &m_pSwapChain);
-	} break;
+		break;
 #endif
 
 #if METAL_SUPPORTED
-	case RENDER_DEVICE_TYPE_METAL: {
-		EngineMtlCreateInfo MtlAttribs;
+		case RENDER_DEVICE_TYPE_METAL: 
+		{
+			EngineMtlCreateInfo MtlAttribs;
 
-		ppContexts.resize(1 + MtlAttribs.NumDeferredContexts);
-		auto* pFactoryMtl = GetEngineFactoryMtl();
-		pFactoryMtl->CreateDeviceAndContextsMtl(MtlAttribs, &m_pDevice,
-			ppContexts.data());
+			ppContexts.resize(1 + MtlAttribs.NumDeferredContexts);
+			auto* pFactoryMtl = GetEngineFactoryMtl();
+			pFactoryMtl->CreateDeviceAndContextsMtl(MtlAttribs, &m_pDevice,
+				ppContexts.data());
 
-		if (!m_pSwapChain && pWindow != nullptr)
-			pFactoryMtl->CreateSwapChainMtl(m_pDevice, ppContexts[0], SCDesc,
-				*pWindow, &m_pSwapChain);
-	} break;
-#endif
-
-	default:
+			if (!m_pSwapChain && pWindow != nullptr)
+				pFactoryMtl->CreateSwapChainMtl(m_pDevice, ppContexts[0], SCDesc,
+					*pWindow, &m_pSwapChain);
+		}
 		break;
+#endif
+		default:
+			break;
 	}
 
 	m_pImmediateContext.Attach(ppContexts[0]);
 	auto NumDeferredCtx = ppContexts.size() - 1;
 	m_pDeferredContexts.resize(NumDeferredCtx);
+	
 	for (Uint32 ctx = 0; ctx < NumDeferredCtx; ++ctx)
 		m_pDeferredContexts[ctx].Attach(ppContexts[1 + ctx]);
 }
 
-void InitializePipeline() {
+void InitializePipeline()
+{
 	PipelineStateCreateInfo PSOCreateInfo;
 	PipelineStateDesc& PSODesc = PSOCreateInfo.PSODesc;
 
@@ -396,33 +432,40 @@ void InitializePipeline() {
 	m_pDevice->CreatePipelineState(PSOCreateInfo, &m_pPSO);
 }
 
-void Render() {
+void Render()
+{
 	auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
 	auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
 	m_pImmediateContext->SetRenderTargets(
 		1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	// Clear the back buffer
-	const float ClearColor[] = { 0.350f, 0.350f, 0.350f, 1.0f };
+	const float ClearColor[] = {0.350f, 0.350f, 0.350f, 1.0f};
+
 	// Let the engine perform required state transitions
 	m_pImmediateContext->ClearRenderTarget(
 		pRTV, ClearColor, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	
 	m_pImmediateContext->ClearDepthStencil(
 		pDSV, CLEAR_DEPTH_FLAG, 1.f, 0,
 		RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
 	// Set pipeline state in the immediate context
 	m_pImmediateContext->SetPipelineState(m_pPSO);
+
 	// We need to commit shader resource. Even though in this example
 	// we don't really have any resources, this call also sets the shaders
 	m_pImmediateContext->CommitShaderResources(
 		nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
 	DrawAttribs drawAttrs;
-	drawAttrs.NumVertices = 3;  // We will render 3 vertices
+	drawAttrs.NumVertices = 3; // We will render 3 vertices
+
 	m_pImmediateContext->Draw(drawAttrs);
 }
 
-void Present() {
+void Present()
+{
 	if (!m_pSwapChain)
 		return;
 
@@ -493,7 +536,7 @@ int main(void)
 #endif
 
 	/* Create a windowed mode window and its OpenGL context */
-	window = SDL_CreateWindow("SDL2 CMake starter", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, SDL_WINDOW_RESIZABLE);
+	window = SDL_CreateWindow(m_AppTitle.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, SDL_WINDOW_RESIZABLE);
 
 	if (!window) 
 	{
