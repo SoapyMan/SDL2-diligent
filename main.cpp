@@ -4,6 +4,12 @@
 #include <string>
 #include <vector>
 
+#ifndef NOMINMAX
+#    define NOMINMAX
+#endif
+#include <Windows.h>
+#include <crtdbg.h>
+
 #if D3D11_SUPPORTED
 #include <EngineFactoryD3D11.h>
 #endif
@@ -26,7 +32,7 @@
 
 #include <Common/interface/RefCntAutoPtr.hpp>
 
-#ifndef PLATFORM_ANDROID
+#if (PLATFORM_ANDROID == 0)
 #define SDL_MAIN_HANDLED // we have own main
 #endif
 
@@ -52,7 +58,7 @@ RefCntAutoPtr<IRenderDevice> m_pDevice;
 RefCntAutoPtr<IDeviceContext> m_pImmediateContext;
 std::vector<RefCntAutoPtr<IDeviceContext>> m_pDeferredContexts;
 RefCntAutoPtr<ISwapChain> m_pSwapChain;
-AdapterAttribs m_AdapterAttribs;
+GraphicsAdapterInfo m_AdapterAttribs;
 std::vector<DisplayModeAttribs> m_DisplayModes;
 
 int m_InitialWindowWidth = 0;
@@ -145,7 +151,7 @@ void InitializeEngine(const NativeWindow* pWindow)
 			Uint32 NumAdapters = 0;
 			pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,NumAdapters, 0);
 			
-			std::vector<AdapterAttribs> Adapters(NumAdapters);
+			std::vector<GraphicsAdapterInfo> Adapters(NumAdapters);
 			if (NumAdapters > 0) 
 			{
 				pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
@@ -156,7 +162,7 @@ void InitializeEngine(const NativeWindow* pWindow)
 			{
 				for (Uint32 i = 0; i < Adapters.size(); ++i) 
 				{
-					if (Adapters[i].AdapterType == m_AdapterType) 
+					if (Adapters[i].Type == m_AdapterType) 
 					{
 						m_AdapterId = i;
 						break;
@@ -224,7 +230,7 @@ void InitializeEngine(const NativeWindow* pWindow)
 			Uint32 NumAdapters = 0;
 			pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel,NumAdapters, 0);
 			
-			std::vector<AdapterAttribs> Adapters(NumAdapters);
+			std::vector<GraphicsAdapterInfo> Adapters(NumAdapters);
 			if (NumAdapters > 0) 
 			{
 				pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel, NumAdapters, Adapters.data());
@@ -242,7 +248,7 @@ void InitializeEngine(const NativeWindow* pWindow)
 			{
 				for (Uint32 i = 0; i < Adapters.size(); ++i)
 				{
-					if (Adapters[i].AdapterType == m_AdapterType) 
+					if (Adapters[i].Type == m_AdapterType) 
 					{
 						m_AdapterId = i;
 						break;
@@ -374,7 +380,7 @@ void InitializeEngine(const NativeWindow* pWindow)
 
 void InitializePipeline()
 {
-	PipelineStateCreateInfo PSOCreateInfo;
+	GraphicsPipelineStateCreateInfo PSOCreateInfo;
 	PipelineStateDesc& PSODesc = PSOCreateInfo.PSODesc;
 
 	// Pipeline state name is used by the engine to report issues.
@@ -382,21 +388,21 @@ void InitializePipeline()
 	PSODesc.Name = "Simple triangle PSO";
 
 	// This is a graphics pipeline
-	PSODesc.IsComputePipeline = false;
-
+	PSOCreateInfo.PSODesc.PipelineType = PIPELINE_TYPE_GRAPHICS;
+	
 	// clang-format off
 	// This tutorial will render to a single render target
-	PSODesc.GraphicsPipeline.NumRenderTargets = 1;
+	PSOCreateInfo.GraphicsPipeline.NumRenderTargets = 1;
 	// Set render target format which is the format of the swap chain's color buffer
-	PSODesc.GraphicsPipeline.RTVFormats[0] = m_pSwapChain->GetDesc().ColorBufferFormat;
+	PSOCreateInfo.GraphicsPipeline.RTVFormats[0] = m_pSwapChain->GetDesc().ColorBufferFormat;
 	// Use the depth buffer format from the swap chain
-	PSODesc.GraphicsPipeline.DSVFormat = m_pSwapChain->GetDesc().DepthBufferFormat;
+	PSOCreateInfo.GraphicsPipeline.DSVFormat = m_pSwapChain->GetDesc().DepthBufferFormat;
 	// Primitive topology defines what kind of primitives will be rendered by this pipeline state
-	PSODesc.GraphicsPipeline.PrimitiveTopology = PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	PSOCreateInfo.GraphicsPipeline.PrimitiveTopology = PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	// No back face culling for this tutorial
-	PSODesc.GraphicsPipeline.RasterizerDesc.CullMode = CULL_MODE_NONE;
+	PSOCreateInfo.GraphicsPipeline.RasterizerDesc.CullMode = CULL_MODE_NONE;
 	// Disable depth testing
-	PSODesc.GraphicsPipeline.DepthStencilDesc.DepthEnable = False;
+	PSOCreateInfo.GraphicsPipeline.DepthStencilDesc.DepthEnable = False;
 	// clang-format on
 
 	ShaderCreateInfo ShaderCI;
@@ -426,10 +432,12 @@ void InitializePipeline()
 		m_pDevice->CreateShader(ShaderCI, &pPS);
 	}
 
+
 	// Finally, create the pipeline state
-	PSODesc.GraphicsPipeline.pVS = pVS;
-	PSODesc.GraphicsPipeline.pPS = pPS;
-	m_pDevice->CreatePipelineState(PSOCreateInfo, &m_pPSO);
+	PSOCreateInfo.pVS = pVS;
+	PSOCreateInfo.pPS = pPS;
+	
+	m_pDevice->CreateGraphicsPipelineState(PSOCreateInfo, &m_pPSO);
 }
 
 void Render()
@@ -460,7 +468,7 @@ void Render()
 
 	DrawAttribs drawAttrs;
 	drawAttrs.NumVertices = 3; // We will render 3 vertices
-
+	
 	m_pImmediateContext->Draw(drawAttrs);
 }
 

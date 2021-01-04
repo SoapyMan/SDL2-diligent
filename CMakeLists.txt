@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.6)
 
-project(main)
+project(main CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(DiligentCore)
 
-IF (WIN32)
+IF (PLATFORM_WIN32)
 	if(NOT SDL2_DIR)
 	  set(SDL2_DIR "" CACHE PATH "SDL2 directory")
 	endif()
@@ -35,6 +35,23 @@ target_link_libraries(main
   ${SDL2_LIBRARIES}
   Diligent-GraphicsEngine
 )
+
+target_compile_definitions(main 
+PRIVATE 
+    UNICODE
+    D3D11_SUPPORTED=$<BOOL:${D3D11_SUPPORTED}>
+    D3D12_SUPPORTED=$<BOOL:${D3D12_SUPPORTED}>
+    GL_SUPPORTED=$<BOOL:${GL_SUPPORTED}>
+    VULKAN_SUPPORTED=$<BOOL:${VULKAN_SUPPORTED}>
+	PLATFORM_WIN32=$<BOOL:${PLATFORM_WIN32}>
+	PLATFORM_UNIVERSAL_WINDOWS=$<BOOL:${PLATFORM_UNIVERSAL_WINDOWS}>
+	PLATFORM_ANDROID=$<BOOL:${PLATFORM_ANDROID}>
+	PLATFORM_LINUX=$<BOOL:${PLATFORM_LINUX}>
+	PLATFORM_MACOS=$<BOOL:${PLATFORM_MACOS}>
+	PLATFORM_IOS=$<BOOL:${PLATFORM_IOS}>
+)
+
+target_compile_definitions(main PRIVATE ENGINE_DLL=0)
 
 if (D3D11_SUPPORTED)
   target_link_libraries(main Diligent-GraphicsEngineD3D11-static)
