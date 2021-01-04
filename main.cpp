@@ -27,8 +27,13 @@
 #if PLATFORM_WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
 #endif
-#include <GLFW/glfw3.h>
-#include <GLFW/glfw3native.h>
+
+#ifndef PLATFORM_ANDROID
+#define SDL_MAIN_HANDLED // we have own main
+#endif
+
+#include <SDL.h>
+#include <SDL_syswm.h>
 
 using namespace Diligent;
 
@@ -42,6 +47,7 @@ RENDER_DEVICE_TYPE m_DeviceType = RENDER_DEVICE_TYPE_D3D12;
 #else
 RENDER_DEVICE_TYPE m_DeviceType = RENDER_DEVICE_TYPE_GL;
 #endif
+
 RefCntAutoPtr<IPipelineState> m_pPSO;
 RefCntAutoPtr<IEngineFactory> m_pEngineFactory;
 RefCntAutoPtr<IRenderDevice> m_pDevice;
@@ -106,374 +112,444 @@ void main(in  PSInput  PSIn,
 )";
 
 void InitializeEngine(const NativeWindow* pWindow) {
-  SwapChainDesc SCDesc;
+	SwapChainDesc SCDesc;
 
 #if PLATFORM_MACOS
-  // We need at least 3 buffers on Metal to avoid massive
-  // peformance degradation in full screen mode.
-  // https://github.com/KhronosGroup/MoltenVK/issues/808
-  SCDesc.BufferCount = 3;
+	// We need at least 3 buffers on Metal to avoid massive
+	// peformance degradation in full screen mode.
+	// https://github.com/KhronosGroup/MoltenVK/issues/808
+	SCDesc.BufferCount = 3;
 #endif
 
-  std::vector<IDeviceContext*> ppContexts;
-  switch (m_DeviceType) {
+	std::vector<IDeviceContext*> ppContexts;
+	switch (m_DeviceType) {
 #if D3D11_SUPPORTED
-    case RENDER_DEVICE_TYPE_D3D11: {
-      EngineD3D11CreateInfo EngineCI;
+	case RENDER_DEVICE_TYPE_D3D11: {
+		EngineD3D11CreateInfo EngineCI;
 
-      if (m_ValidationLevel >= 1) {
-        EngineCI.DebugFlags =
-            D3D11_DEBUG_FLAG_CREATE_DEBUG_DEVICE |
-            D3D11_DEBUG_FLAG_VERIFY_COMMITTED_SHADER_RESOURCES |
-            D3D11_DEBUG_FLAG_VERIFY_COMMITTED_RESOURCE_RELEVANCE;
-      } else if (m_ValidationLevel == 0) {
-        EngineCI.DebugFlags = D3D11_DEBUG_FLAG_NONE;
-      }
+		if (m_ValidationLevel >= 1) {
+			EngineCI.DebugFlags =
+				D3D11_DEBUG_FLAG_CREATE_DEBUG_DEVICE |
+				D3D11_DEBUG_FLAG_VERIFY_COMMITTED_SHADER_RESOURCES |
+				D3D11_DEBUG_FLAG_VERIFY_COMMITTED_RESOURCE_RELEVANCE;
+		}
+		else if (m_ValidationLevel == 0) {
+			EngineCI.DebugFlags = D3D11_DEBUG_FLAG_NONE;
+		}
 
 #if ENGINE_DLL
-      // Load the dll and import GetEngineFactoryD3D11() function
-      auto GetEngineFactoryD3D11 = LoadGraphicsEngineD3D11();
+		// Load the dll and import GetEngineFactoryD3D11() function
+		auto GetEngineFactoryD3D11 = LoadGraphicsEngineD3D11();
 #endif
-      auto* pFactoryD3D11 = GetEngineFactoryD3D11();
-      m_pEngineFactory = pFactoryD3D11;
-      Uint32 NumAdapters = 0;
-      pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
-                                       NumAdapters, 0);
-      std::vector<AdapterAttribs> Adapters(NumAdapters);
-      if (NumAdapters > 0) {
-        pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
-                                         NumAdapters, Adapters.data());
-      } else {
-      }
+		auto* pFactoryD3D11 = GetEngineFactoryD3D11();
+		m_pEngineFactory = pFactoryD3D11;
+		Uint32 NumAdapters = 0;
+		pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
+			NumAdapters, 0);
+		std::vector<AdapterAttribs> Adapters(NumAdapters);
+		if (NumAdapters > 0) {
+			pFactoryD3D11->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
+				NumAdapters, Adapters.data());
+		}
+		else {
+		}
 
-      if (m_AdapterType == ADAPTER_TYPE_SOFTWARE) {
-        for (Uint32 i = 0; i < Adapters.size(); ++i) {
-          if (Adapters[i].AdapterType == m_AdapterType) {
-            m_AdapterId = i;
-            break;
-          }
-        }
-      }
+		if (m_AdapterType == ADAPTER_TYPE_SOFTWARE) {
+			for (Uint32 i = 0; i < Adapters.size(); ++i) {
+				if (Adapters[i].AdapterType == m_AdapterType) {
+					m_AdapterId = i;
+					break;
+				}
+			}
+		}
 
-      m_AdapterAttribs = Adapters[m_AdapterId];
-      if (m_AdapterType != ADAPTER_TYPE_SOFTWARE) {
-        Uint32 NumDisplayModes = 0;
-        pFactoryD3D11->EnumerateDisplayModes(
-            EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
-            TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes, nullptr);
-        m_DisplayModes.resize(NumDisplayModes);
-        pFactoryD3D11->EnumerateDisplayModes(
-            EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
-            TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes,
-            m_DisplayModes.data());
-      }
+		m_AdapterAttribs = Adapters[m_AdapterId];
+		if (m_AdapterType != ADAPTER_TYPE_SOFTWARE) {
+			Uint32 NumDisplayModes = 0;
+			pFactoryD3D11->EnumerateDisplayModes(
+				EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
+				TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes, nullptr);
+			m_DisplayModes.resize(NumDisplayModes);
+			pFactoryD3D11->EnumerateDisplayModes(
+				EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
+				TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes,
+				m_DisplayModes.data());
+		}
 
-      EngineCI.AdapterId = m_AdapterId;
-      ppContexts.resize(1 + EngineCI.NumDeferredContexts);
-      pFactoryD3D11->CreateDeviceAndContextsD3D11(EngineCI, &m_pDevice,
-                                                  ppContexts.data());
+		EngineCI.AdapterId = m_AdapterId;
+		ppContexts.resize(1 + EngineCI.NumDeferredContexts);
+		pFactoryD3D11->CreateDeviceAndContextsD3D11(EngineCI, &m_pDevice,
+			ppContexts.data());
 
-      if (pWindow != nullptr)
-        pFactoryD3D11->CreateSwapChainD3D11(m_pDevice, ppContexts[0], SCDesc,
-                                            FullScreenModeDesc{}, *pWindow,
-                                            &m_pSwapChain);
-    } break;
+		if (pWindow != nullptr)
+			pFactoryD3D11->CreateSwapChainD3D11(m_pDevice, ppContexts[0], SCDesc,
+				FullScreenModeDesc{}, *pWindow,
+				&m_pSwapChain);
+	} break;
 #endif
 
 #if D3D12_SUPPORTED
-    case RENDER_DEVICE_TYPE_D3D12: {
-      EngineD3D12CreateInfo EngineCI;
+	case RENDER_DEVICE_TYPE_D3D12: {
+		EngineD3D12CreateInfo EngineCI;
 
-      if (m_ValidationLevel >= 1) {
-        EngineCI.EnableDebugLayer = true;
-        if (m_ValidationLevel >= 2) EngineCI.EnableGPUBasedValidation = true;
-      } else if (m_ValidationLevel == 0) {
-        EngineCI.EnableDebugLayer = false;
-      }
+		if (m_ValidationLevel >= 1) {
+			EngineCI.EnableDebugLayer = true;
+			if (m_ValidationLevel >= 2) EngineCI.EnableGPUBasedValidation = true;
+		}
+		else if (m_ValidationLevel == 0) {
+			EngineCI.EnableDebugLayer = false;
+		}
 
 #if ENGINE_DLL
-      // Load the dll and import GetEngineFactoryD3D12() function
-      auto GetEngineFactoryD3D12 = LoadGraphicsEngineD3D12();
+		// Load the dll and import GetEngineFactoryD3D12() function
+		auto GetEngineFactoryD3D12 = LoadGraphicsEngineD3D12();
 #endif
-      auto* pFactoryD3D12 = GetEngineFactoryD3D12();
-      if (!pFactoryD3D12->LoadD3D12()) {
-      }
+		auto* pFactoryD3D12 = GetEngineFactoryD3D12();
+		if (!pFactoryD3D12->LoadD3D12()) {
+		}
 
-      m_pEngineFactory = pFactoryD3D12;
-      Uint32 NumAdapters = 0;
-      pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
-                                       NumAdapters, 0);
-      std::vector<AdapterAttribs> Adapters(NumAdapters);
-      if (NumAdapters > 0) {
-        pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
-                                         NumAdapters, Adapters.data());
-      } else {
+		m_pEngineFactory = pFactoryD3D12;
+		Uint32 NumAdapters = 0;
+		pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
+			NumAdapters, 0);
+		std::vector<AdapterAttribs> Adapters(NumAdapters);
+		if (NumAdapters > 0) {
+			pFactoryD3D12->EnumerateAdapters(EngineCI.MinimumFeatureLevel,
+				NumAdapters, Adapters.data());
+		}
+		else {
 #if D3D11_SUPPORTED
-        m_DeviceType = RENDER_DEVICE_TYPE_D3D11;
-        InitializeEngine(pWindow);
-        return;
+			m_DeviceType = RENDER_DEVICE_TYPE_D3D11;
+			InitializeEngine(pWindow);
+			return;
 #endif
-      }
+		}
 
-      if (m_AdapterType == ADAPTER_TYPE_SOFTWARE) {
-        for (Uint32 i = 0; i < Adapters.size(); ++i) {
-          if (Adapters[i].AdapterType == m_AdapterType) {
-            m_AdapterId = i;
-            break;
-          }
-        }
-      }
+		if (m_AdapterType == ADAPTER_TYPE_SOFTWARE) {
+			for (Uint32 i = 0; i < Adapters.size(); ++i) {
+				if (Adapters[i].AdapterType == m_AdapterType) {
+					m_AdapterId = i;
+					break;
+				}
+			}
+		}
 
-      m_AdapterAttribs = Adapters[m_AdapterId];
-      if (m_AdapterType != ADAPTER_TYPE_SOFTWARE) {
-        Uint32 NumDisplayModes = 0;
-        pFactoryD3D12->EnumerateDisplayModes(
-            EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
-            TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes, nullptr);
-        m_DisplayModes.resize(NumDisplayModes);
-        pFactoryD3D12->EnumerateDisplayModes(
-            EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
-            TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes,
-            m_DisplayModes.data());
-      }
+		m_AdapterAttribs = Adapters[m_AdapterId];
+		if (m_AdapterType != ADAPTER_TYPE_SOFTWARE) {
+			Uint32 NumDisplayModes = 0;
+			pFactoryD3D12->EnumerateDisplayModes(
+				EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
+				TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes, nullptr);
+			m_DisplayModes.resize(NumDisplayModes);
+			pFactoryD3D12->EnumerateDisplayModes(
+				EngineCI.MinimumFeatureLevel, m_AdapterId, 0,
+				TEX_FORMAT_RGBA8_UNORM_SRGB, NumDisplayModes,
+				m_DisplayModes.data());
+		}
 
-      EngineCI.AdapterId = m_AdapterId;
-      ppContexts.resize(1 + EngineCI.NumDeferredContexts);
-      pFactoryD3D12->CreateDeviceAndContextsD3D12(EngineCI, &m_pDevice,
-                                                  ppContexts.data());
+		EngineCI.AdapterId = m_AdapterId;
+		ppContexts.resize(1 + EngineCI.NumDeferredContexts);
+		pFactoryD3D12->CreateDeviceAndContextsD3D12(EngineCI, &m_pDevice,
+			ppContexts.data());
 
-      if (!m_pSwapChain && pWindow != nullptr)
-        pFactoryD3D12->CreateSwapChainD3D12(m_pDevice, ppContexts[0], SCDesc,
-                                            FullScreenModeDesc{}, *pWindow,
-                                            &m_pSwapChain);
-    } break;
+		if (!m_pSwapChain && pWindow != nullptr)
+			pFactoryD3D12->CreateSwapChainD3D12(m_pDevice, ppContexts[0], SCDesc,
+				FullScreenModeDesc{}, *pWindow,
+				&m_pSwapChain);
+	} break;
 #endif
 
 #if GL_SUPPORTED || GLES_SUPPORTED
-    case RENDER_DEVICE_TYPE_GL:
-    case RENDER_DEVICE_TYPE_GLES: {
+	case RENDER_DEVICE_TYPE_GL:
+	case RENDER_DEVICE_TYPE_GLES: {
 #if !PLATFORM_MACOS
-      VERIFY_EXPR(pWindow != nullptr);
+		VERIFY_EXPR(pWindow != nullptr);
 #endif
 #if EXPLICITLY_LOAD_ENGINE_GL_DLL
-      // Load the dll and import GetEngineFactoryOpenGL() function
-      auto GetEngineFactoryOpenGL = LoadGraphicsEngineOpenGL();
+		// Load the dll and import GetEngineFactoryOpenGL() function
+		auto GetEngineFactoryOpenGL = LoadGraphicsEngineOpenGL();
 #endif
-      auto* pFactoryOpenGL = GetEngineFactoryOpenGL();
-      m_pEngineFactory = pFactoryOpenGL;
-      EngineGLCreateInfo CreationAttribs;
-      CreationAttribs.Window = *pWindow;
-      if (CreationAttribs.NumDeferredContexts != 0) {
-        CreationAttribs.NumDeferredContexts = 0;
-      }
-      ppContexts.resize(1 + CreationAttribs.NumDeferredContexts);
-      pFactoryOpenGL->CreateDeviceAndSwapChainGL(CreationAttribs, &m_pDevice,
-                                                 ppContexts.data(), SCDesc,
-                                                 &m_pSwapChain);
-    } break;
+		auto* pFactoryOpenGL = GetEngineFactoryOpenGL();
+		m_pEngineFactory = pFactoryOpenGL;
+		EngineGLCreateInfo CreationAttribs;
+		CreationAttribs.Window = *pWindow;
+		if (CreationAttribs.NumDeferredContexts != 0) {
+			CreationAttribs.NumDeferredContexts = 0;
+		}
+		ppContexts.resize(1 + CreationAttribs.NumDeferredContexts);
+		pFactoryOpenGL->CreateDeviceAndSwapChainGL(CreationAttribs, &m_pDevice,
+			ppContexts.data(), SCDesc,
+			&m_pSwapChain);
+	} break;
 #endif
 
 #if VULKAN_SUPPORTED
-    case RENDER_DEVICE_TYPE_VULKAN: {
+	case RENDER_DEVICE_TYPE_VULKAN: {
 #if EXPLICITLY_LOAD_ENGINE_VK_DLL
-      // Load the dll and import GetEngineFactoryVk() function
-      auto GetEngineFactoryVk = LoadGraphicsEngineVk();
+		// Load the dll and import GetEngineFactoryVk() function
+		auto GetEngineFactoryVk = LoadGraphicsEngineVk();
 #endif
-      EngineVkCreateInfo EngVkAttribs;
+		EngineVkCreateInfo EngVkAttribs;
 
-      if (m_ValidationLevel >= 1) {
-        EngVkAttribs.EnableValidation = true;
-      } else if (m_ValidationLevel == 0) {
-        EngVkAttribs.EnableValidation = false;
-      }
+		if (m_ValidationLevel >= 1) {
+			EngVkAttribs.EnableValidation = true;
+		}
+		else if (m_ValidationLevel == 0) {
+			EngVkAttribs.EnableValidation = false;
+		}
 
-      ppContexts.resize(1 + EngVkAttribs.NumDeferredContexts);
-      auto* pFactoryVk = GetEngineFactoryVk();
-      m_pEngineFactory = pFactoryVk;
-      pFactoryVk->CreateDeviceAndContextsVk(EngVkAttribs, &m_pDevice,
-                                            ppContexts.data());
-      if (!m_pDevice) {
-      }
-      if (!m_pSwapChain && pWindow != nullptr)
-        pFactoryVk->CreateSwapChainVk(m_pDevice, ppContexts[0], SCDesc,
-                                      *pWindow, &m_pSwapChain);
-    } break;
+		ppContexts.resize(1 + EngVkAttribs.NumDeferredContexts);
+		auto* pFactoryVk = GetEngineFactoryVk();
+		m_pEngineFactory = pFactoryVk;
+		pFactoryVk->CreateDeviceAndContextsVk(EngVkAttribs, &m_pDevice,
+			ppContexts.data());
+		if (!m_pDevice) {
+		}
+		if (!m_pSwapChain && pWindow != nullptr)
+			pFactoryVk->CreateSwapChainVk(m_pDevice, ppContexts[0], SCDesc,
+				*pWindow, &m_pSwapChain);
+	} break;
 #endif
 
 #if METAL_SUPPORTED
-    case RENDER_DEVICE_TYPE_METAL: {
-      EngineMtlCreateInfo MtlAttribs;
+	case RENDER_DEVICE_TYPE_METAL: {
+		EngineMtlCreateInfo MtlAttribs;
 
-      ppContexts.resize(1 + MtlAttribs.NumDeferredContexts);
-      auto* pFactoryMtl = GetEngineFactoryMtl();
-      pFactoryMtl->CreateDeviceAndContextsMtl(MtlAttribs, &m_pDevice,
-                                              ppContexts.data());
+		ppContexts.resize(1 + MtlAttribs.NumDeferredContexts);
+		auto* pFactoryMtl = GetEngineFactoryMtl();
+		pFactoryMtl->CreateDeviceAndContextsMtl(MtlAttribs, &m_pDevice,
+			ppContexts.data());
 
-      if (!m_pSwapChain && pWindow != nullptr)
-        pFactoryMtl->CreateSwapChainMtl(m_pDevice, ppContexts[0], SCDesc,
-                                        *pWindow, &m_pSwapChain);
-    } break;
+		if (!m_pSwapChain && pWindow != nullptr)
+			pFactoryMtl->CreateSwapChainMtl(m_pDevice, ppContexts[0], SCDesc,
+				*pWindow, &m_pSwapChain);
+	} break;
 #endif
 
-    default:
-      break;
-  }
+	default:
+		break;
+	}
 
-  m_pImmediateContext.Attach(ppContexts[0]);
-  auto NumDeferredCtx = ppContexts.size() - 1;
-  m_pDeferredContexts.resize(NumDeferredCtx);
-  for (Uint32 ctx = 0; ctx < NumDeferredCtx; ++ctx)
-    m_pDeferredContexts[ctx].Attach(ppContexts[1 + ctx]);
+	m_pImmediateContext.Attach(ppContexts[0]);
+	auto NumDeferredCtx = ppContexts.size() - 1;
+	m_pDeferredContexts.resize(NumDeferredCtx);
+	for (Uint32 ctx = 0; ctx < NumDeferredCtx; ++ctx)
+		m_pDeferredContexts[ctx].Attach(ppContexts[1 + ctx]);
 }
 
 void InitializePipeline() {
-  PipelineStateCreateInfo PSOCreateInfo;
-  PipelineStateDesc& PSODesc = PSOCreateInfo.PSODesc;
+	PipelineStateCreateInfo PSOCreateInfo;
+	PipelineStateDesc& PSODesc = PSOCreateInfo.PSODesc;
 
-  // Pipeline state name is used by the engine to report issues.
-  // It is always a good idea to give objects descriptive names.
-  PSODesc.Name = "Simple triangle PSO";
+	// Pipeline state name is used by the engine to report issues.
+	// It is always a good idea to give objects descriptive names.
+	PSODesc.Name = "Simple triangle PSO";
 
-  // This is a graphics pipeline
-  PSODesc.IsComputePipeline = false;
+	// This is a graphics pipeline
+	PSODesc.IsComputePipeline = false;
 
-  // clang-format off
-  // This tutorial will render to a single render target
-  PSODesc.GraphicsPipeline.NumRenderTargets             = 1;
-  // Set render target format which is the format of the swap chain's color buffer
-  PSODesc.GraphicsPipeline.RTVFormats[0]                = m_pSwapChain->GetDesc().ColorBufferFormat;
-  // Use the depth buffer format from the swap chain
-  PSODesc.GraphicsPipeline.DSVFormat                    = m_pSwapChain->GetDesc().DepthBufferFormat;
-  // Primitive topology defines what kind of primitives will be rendered by this pipeline state
-  PSODesc.GraphicsPipeline.PrimitiveTopology            = PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-  // No back face culling for this tutorial
-  PSODesc.GraphicsPipeline.RasterizerDesc.CullMode      = CULL_MODE_NONE;
-  // Disable depth testing
-  PSODesc.GraphicsPipeline.DepthStencilDesc.DepthEnable = False;
-  // clang-format on
+	// clang-format off
+	// This tutorial will render to a single render target
+	PSODesc.GraphicsPipeline.NumRenderTargets = 1;
+	// Set render target format which is the format of the swap chain's color buffer
+	PSODesc.GraphicsPipeline.RTVFormats[0] = m_pSwapChain->GetDesc().ColorBufferFormat;
+	// Use the depth buffer format from the swap chain
+	PSODesc.GraphicsPipeline.DSVFormat = m_pSwapChain->GetDesc().DepthBufferFormat;
+	// Primitive topology defines what kind of primitives will be rendered by this pipeline state
+	PSODesc.GraphicsPipeline.PrimitiveTopology = PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	// No back face culling for this tutorial
+	PSODesc.GraphicsPipeline.RasterizerDesc.CullMode = CULL_MODE_NONE;
+	// Disable depth testing
+	PSODesc.GraphicsPipeline.DepthStencilDesc.DepthEnable = False;
+	// clang-format on
 
-  ShaderCreateInfo ShaderCI;
-  // Tell the system that the shader source code is in HLSL.
-  // For OpenGL, the engine will convert this into GLSL under the hood.
-  ShaderCI.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
-  // OpenGL backend requires emulated combined HLSL texture samplers (g_Texture
-  // + g_Texture_sampler combination)
-  ShaderCI.UseCombinedTextureSamplers = true;
-  // Create a vertex shader
-  RefCntAutoPtr<IShader> pVS;
-  {
-    ShaderCI.Desc.ShaderType = SHADER_TYPE_VERTEX;
-    ShaderCI.EntryPoint = "main";
-    ShaderCI.Desc.Name = "Triangle vertex shader";
-    ShaderCI.Source = VSSource;
-    m_pDevice->CreateShader(ShaderCI, &pVS);
-  }
+	ShaderCreateInfo ShaderCI;
+	// Tell the system that the shader source code is in HLSL.
+	// For OpenGL, the engine will convert this into GLSL under the hood.
+	ShaderCI.SourceLanguage = SHADER_SOURCE_LANGUAGE_HLSL;
+	// OpenGL backend requires emulated combined HLSL texture samplers (g_Texture
+	// + g_Texture_sampler combination)
+	ShaderCI.UseCombinedTextureSamplers = true;
+	// Create a vertex shader
+	RefCntAutoPtr<IShader> pVS;
+	{
+		ShaderCI.Desc.ShaderType = SHADER_TYPE_VERTEX;
+		ShaderCI.EntryPoint = "main";
+		ShaderCI.Desc.Name = "Triangle vertex shader";
+		ShaderCI.Source = VSSource;
+		m_pDevice->CreateShader(ShaderCI, &pVS);
+	}
 
-  // Create a pixel shader
-  RefCntAutoPtr<IShader> pPS;
-  {
-    ShaderCI.Desc.ShaderType = SHADER_TYPE_PIXEL;
-    ShaderCI.EntryPoint = "main";
-    ShaderCI.Desc.Name = "Triangle pixel shader";
-    ShaderCI.Source = PSSource;
-    m_pDevice->CreateShader(ShaderCI, &pPS);
-  }
+	// Create a pixel shader
+	RefCntAutoPtr<IShader> pPS;
+	{
+		ShaderCI.Desc.ShaderType = SHADER_TYPE_PIXEL;
+		ShaderCI.EntryPoint = "main";
+		ShaderCI.Desc.Name = "Triangle pixel shader";
+		ShaderCI.Source = PSSource;
+		m_pDevice->CreateShader(ShaderCI, &pPS);
+	}
 
-  // Finally, create the pipeline state
-  PSODesc.GraphicsPipeline.pVS = pVS;
-  PSODesc.GraphicsPipeline.pPS = pPS;
-  m_pDevice->CreatePipelineState(PSOCreateInfo, &m_pPSO);
+	// Finally, create the pipeline state
+	PSODesc.GraphicsPipeline.pVS = pVS;
+	PSODesc.GraphicsPipeline.pPS = pPS;
+	m_pDevice->CreatePipelineState(PSOCreateInfo, &m_pPSO);
 }
 
 void Render() {
-  auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
-  auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
-  m_pImmediateContext->SetRenderTargets(
-      1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	auto* pRTV = m_pSwapChain->GetCurrentBackBufferRTV();
+	auto* pDSV = m_pSwapChain->GetDepthBufferDSV();
+	m_pImmediateContext->SetRenderTargets(
+		1, &pRTV, pDSV, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-  // Clear the back buffer
-  const float ClearColor[] = {0.350f, 0.350f, 0.350f, 1.0f};
-  // Let the engine perform required state transitions
-  m_pImmediateContext->ClearRenderTarget(
-      pRTV, ClearColor, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-  m_pImmediateContext->ClearDepthStencil(
-      pDSV, CLEAR_DEPTH_FLAG, 1.f, 0,
-      RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	// Clear the back buffer
+	const float ClearColor[] = { 0.350f, 0.350f, 0.350f, 1.0f };
+	// Let the engine perform required state transitions
+	m_pImmediateContext->ClearRenderTarget(
+		pRTV, ClearColor, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	m_pImmediateContext->ClearDepthStencil(
+		pDSV, CLEAR_DEPTH_FLAG, 1.f, 0,
+		RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 
-  // Set pipeline state in the immediate context
-  m_pImmediateContext->SetPipelineState(m_pPSO);
-  // We need to commit shader resource. Even though in this example
-  // we don't really have any resources, this call also sets the shaders
-  m_pImmediateContext->CommitShaderResources(
-      nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
-  DrawAttribs drawAttrs;
-  drawAttrs.NumVertices = 3;  // We will render 3 vertices
-  m_pImmediateContext->Draw(drawAttrs);
+	// Set pipeline state in the immediate context
+	m_pImmediateContext->SetPipelineState(m_pPSO);
+	// We need to commit shader resource. Even though in this example
+	// we don't really have any resources, this call also sets the shaders
+	m_pImmediateContext->CommitShaderResources(
+		nullptr, RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+	DrawAttribs drawAttrs;
+	drawAttrs.NumVertices = 3;  // We will render 3 vertices
+	m_pImmediateContext->Draw(drawAttrs);
 }
 
 void Present() {
-  if (!m_pSwapChain) {
-    return;
-  }
-  m_pSwapChain->Present();
+	if (!m_pSwapChain)
+		return;
+
+	m_pSwapChain->Present();
 }
 
-int main(void) {
-  GLFWwindow* window;
+bool g_bQuit = false;
 
-  /* Initialize the library */
-  if (!glfwInit()) {
-    return -1;
-  }
+void HandleSDLEvents(SDL_Event* event)
+{
+	switch (event->type)
+	{
+		case SDL_APP_TERMINATING:
+		case SDL_QUIT:
+		{
+			g_bQuit = true;
+
+			break;
+		}
+		case SDL_WINDOWEVENT:
+		{
+			if (event->window.event == SDL_WINDOWEVENT_CLOSE)
+			{
+				g_bQuit = true;
+			}
+			else if (event->window.event == SDL_WINDOWEVENT_RESIZED)
+			{
+				if (event->window.data1 > 0 && event->window.data2 > 0)
+				{
+					// resize swap chain
+					m_pSwapChain->Resize(event->window.data1, event->window.data2);
+				}
+			}
+			else if (event->window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
+			{
+
+			}
+			else if (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+			{
+
+			}
+
+			break;
+		}
+		default:
+		{
+			// process inputs
+		}
+	}
+}
+
+int main(void)
+{
+	SDL_Window* window;
+
+	/* Initialize the library */
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) 
+	{
+		return -1;
+	}
 
 #if PLATFORM_WIN32
-  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+	//glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 #else
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	//glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+	//glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+	//glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #endif
 
-  /* Create a windowed mode window and its OpenGL context */
-  window = glfwCreateWindow(640, 480, "GLFW CMake starter", NULL, NULL);
+	/* Create a windowed mode window and its OpenGL context */
+	window = SDL_CreateWindow("SDL2 CMake starter", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, SDL_WINDOW_RESIZABLE);
 
-  if (!window) {
-    glfwTerminate();
-    return -1;
-  }
+	if (!window) 
+	{
+		SDL_Quit();
+		return -1;
+	}
 
-  void* window_handle = NULL;
+	void* window_handle = NULL;
+
+	// set window info
+	SDL_SysWMinfo winfo;
+	SDL_VERSION(&winfo.version); // initialize info structure with SDL version info
+
+	if (!SDL_GetWindowWMInfo(window, &winfo))
+	{
+		SDL_Quit();
+		return -1;
+	}
+	
 #if PLATFORM_WIN32
-  window_handle = static_cast<void*>(glfwGetWin32Window(window));
+	window_handle = static_cast<void*>(winfo.info.win.window);
 #elif PLATFORM_MACOS
-  glfwMakeContextCurrent(window);
-  window_handle = static_cast<void*>(glfwGetCocoaWindow(window));
+	window_handle = static_cast<void*>(winfo.info.cocoa.window);
 #elif PLATFORM_LINUX
-  // FIXME: Get x11 or wayland window handle using glfw
-  glfwMakeContextCurrent(window);
-  throw std::runtime_error("Missing window handle");
+	window_handle = static_cast<void*>(winfo.info.x11.window);		// FIXME: is that correct?
 #endif
 
-  NativeWindow nw{window_handle};
-  InitializeEngine(&nw);
-  InitializePipeline();
+	NativeWindow nw{ window_handle };
+	InitializeEngine(&nw);
+	InitializePipeline();
 
-  /* Loop until the user closes the window */
-  while (!glfwWindowShouldClose(window)) {
-    if (m_pImmediateContext) {
-      Render();
+	SDL_Event event;
+
+	/* Loop until the user closes the window */
+	while (!g_bQuit) 
+	{
+		/* Poll for and process events */
+		while (SDL_PollEvent(&event))
+		{
+			// do something
+			HandleSDLEvents(&event);
+		}
+		
+		if (m_pImmediateContext)
+		{
+			Render();
 
 #if PLATFORM_MACOS
-      glfwSwapBuffers(window);
+			// TODO:
 #else
-      Present();
+			Present();
 #endif
-    }
+		}
+	}
 
-    /* Poll for and process events */
-    glfwPollEvents();
-  }
+	SDL_Quit();
 
-  glfwTerminate();
-  return 0;
+	return 0;
 }

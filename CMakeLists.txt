@@ -5,22 +5,34 @@ project(main)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_subdirectory(glfw)
 add_subdirectory(DiligentCore)
 
-include_directories("glfw/include")
-include_directories(DiligentCore)
+IF (WIN32)
+	if(NOT SDL2_DIR)
+	  set(SDL2_DIR "" CACHE PATH "SDL2 directory")
+	endif()
 
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL  "GLFW lib only")
-set(GLFW_BUILD_TESTS OFF CACHE BOOL  "GLFW lib only")
-set(GLFW_BUILD_DOCS OFF CACHE BOOL  "GLFW lib only")
-set(GLFW_BUILD_INSTALL OFF CACHE BOOL  "GLFW lib only")
+	set(SDL2_INCLUDE_DIRS "${SDL2_DIR}/include")
+
+	if (${CMAKE_SIZEOF_VOID_P} MATCHES 8)
+	  set(SDL2_LIBRARIES "${SDL2_DIR}/lib/x64/SDL2.lib;${SDL2_DIR}/lib/x64/SDL2main.lib")
+	else ()
+	  set(SDL2_LIBRARIES "${SDL2_DIR}/lib/x86/SDL2.lib;${SDL2_DIR}/lib/x86/SDL2main.lib")
+	endif ()
+
+	string(STRIP "${SDL2_LIBRARIES}" SDL2_LIBRARIES)
+ELSE()
+	find_package(SDL2 REQUIRED)
+ENDIF()
+
+include_directories(${SDL2_INCLUDE_DIRS})
+include_directories(DiligentCore)
 
 set(SRC main.cpp)
 
 add_executable(main ${SRC})
 target_link_libraries(main
-  glfw
+  ${SDL2_LIBRARIES}
   Diligent-GraphicsEngine
 )
 
